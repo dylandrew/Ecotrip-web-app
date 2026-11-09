@@ -384,6 +384,11 @@ p { line-height: 1.6; }
 .experience-card-trip > small { display: block; margin-top: 2px; }
 .experience-details { padding-top: 4px; border-top: 1px solid var(--line); }
 .experience-details > p { white-space: pre-wrap; }
+.experience-copy-button { margin-top: 14px; }
+.experience-copy-form { display: grid; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.experience-copy-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.experience-copy-form input, .admin-experience-notes { width: 100%; min-width: 180px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #fffdf8; font: inherit; }
+.admin-experience-notes { display: block; margin-top: 8px; resize: vertical; font-size: 12px; }
 .experience-dates { color: var(--muted) !important; font-size: 13px; }
 .experience-card h3 { margin: 20px 0 8px; font-size: 19px; }
 .experience-places { display: grid; gap: 8px; margin: 0 0 18px; padding-left: 22px; }

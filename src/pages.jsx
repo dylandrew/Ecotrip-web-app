@@ -576,8 +576,48 @@ function TripDetail() {
 
 function ExperienceCard({ experience }) {
   const [expanded, setExpanded] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [copyForm, setCopyForm] = useState(null);
+  const [copyError, setCopyError] = useState('');
+  const [copyBusy, setCopyBusy] = useState(false);
+  const navigate = useNavigate();
   const isTrip = experience.reference_type === 'trip';
   const detailsId = `experience-details-${experience.reference_type || 'stop'}-${experience.id}`;
+
+  function startCopy() {
+    const duration = Math.max(1, Math.round((new Date(`${experience.end_date}T00:00:00Z`) - new Date(`${experience.start_date}T00:00:00Z`)) / 86400000) + 1);
+    const start = new Date();
+    start.setUTCDate(start.getUTCDate() + 30);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + duration - 1);
+    setCopyForm({
+      title: `Copy of ${experience.description}`.slice(0, 150),
+      start_date: start.toISOString().slice(0, 10),
+      end_date: end.toISOString().slice(0, 10),
+      budget: '',
+      travelers: '1',
+    });
+    setCopyError('');
+    setCopying(true);
+  }
+
+  async function copyTrip(event) {
+    event.preventDefault();
+    setCopyBusy(true);
+    setCopyError('');
+    try {
+      const data = await api.post(`/experiences/${experience.id}/copy`, {
+        ...copyForm,
+        budget: Number(copyForm.budget),
+        travelers: Number(copyForm.travelers),
+      });
+      navigate(`/trips/${data.trip.id}`);
+    } catch (requestError) {
+      setCopyError(requestError.message);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
 
   return <article className={`surface experience-card${isTrip ? ' experience-card-trip' : ''}`}>
     <p className="eyebrow">{experience.location}{isTrip ? ' · Full trip reference' : ` · Day ${experience.day_number}`}</p>
@@ -599,6 +639,18 @@ function ExperienceCard({ experience }) {
         <h3>Traveler's notes</h3>
         <p>{experience.experience_notes}</p>
       </div>}
+      {!copying ? <button className="button button-small experience-copy-button" type="button" onClick={startCopy}>Use as trip template</button> : <form className="experience-copy-form" onSubmit={copyTrip}>
+        <p className="inline-note">This creates a private draft with editable itinerary stops. Choose your dates and budget; it will not be shared publicly.</p>
+        <FormError>{copyError}</FormError>
+        <label>Trip title<input value={copyForm.title} maxLength="150" onChange={(event) => setCopyForm((current) => ({ ...current, title: event.target.value }))} required /></label>
+        <div className="form-grid">
+          <label>Start date<input type="date" value={copyForm.start_date} onChange={(event) => setCopyForm((current) => ({ ...current, start_date: event.target.value }))} required /></label>
+          <label>End date<input type="date" value={copyForm.end_date} onChange={(event) => setCopyForm((current) => ({ ...current, end_date: event.target.value }))} required /></label>
+          <label>Budget (PHP)<input type="number" min="1" step="0.01" value={copyForm.budget} onChange={(event) => setCopyForm((current) => ({ ...current, budget: event.target.value }))} required /></label>
+          <label>Travelers<input type="number" min="1" max="50" value={copyForm.travelers} onChange={(event) => setCopyForm((current) => ({ ...current, travelers: event.target.value }))} required /></label>
+        </div>
+        <div className="form-actions"><button className="button button-small" disabled={copyBusy}>{copyBusy ? 'Creating draft…' : 'Create editable draft'}</button><button className="button button-small button-outline" type="button" onClick={() => setCopying(false)} disabled={copyBusy}>Cancel</button></div>
+      </form>}
       <small>Completed trip · shared by its traveler</small>
     </>}
   </article>;
@@ -1264,7 +1316,7 @@ function Account() {
   return <Shell><PageHeading eyebrow="Your account" title="Account settings." copy="Keep your profile current and manage your EcoTrip data."/><div className="account-grid"><section className="surface"><p className="eyebrow">Profile</p><h2>{user?.name}</h2><p className="inline-note">{user?.email}</p><FormError>{error}</FormError>{message && <div className="form-success">{message}</div>}<form className="form-stack" onSubmit={updateAddress}><label>Home address<input name="address" maxLength="255" defaultValue={user?.address || ''} required /></label><button className="button button-outline" disabled={busy}>Save address</button></form></section><section className="surface"><p className="eyebrow">Security</p><h2>Change password</h2><form className="form-stack" onSubmit={changePassword}><label>Current password<input name="current_password" type="password" autoComplete="current-password" required /></label><label>New password<input name="new_password" type="password" minLength="12" autoComplete="new-password" required /></label><label>Confirm new password<input name="confirm_password" type="password" minLength="12" autoComplete="new-password" required /></label><button className="button" disabled={busy}>Update password</button></form></section><section className="surface account-data"><p className="eyebrow">Your data</p><h2>Take your records with you.</h2><p>Download a PDF export of your profile, trips, and bookings.</p><div className="form-actions"><button className="button button-outline" onClick={download} disabled={busy}>{busy ? 'Preparing PDF…' : 'Download PDF'}</button><button className="button button-danger" onClick={deleteAccount} disabled={busy}>Delete account</button></div></section></div></Shell>;
 }
 
-const adminTabs = [['overview', 'Overview'], ['users', 'Users'], ['trips', 'Trips'], ['stays', 'Stays'], ['routes', 'Routes'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['photos', 'Photos']];
+const adminTabs = [['overview', 'Overview'], ['users', 'Users'], ['trips', 'Trips'], ['experiences', 'Experiences'], ['stays', 'Stays'], ['routes', 'Routes'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['photos', 'Photos']];
 
 function Admin() {
   const [tab, setTab] = useState('overview');
@@ -1288,6 +1340,7 @@ function AdminContent({ tab, data, reload }) {
   if (tab === 'overview') return <><FormError>{error}</FormError><div className="stat-grid">{Object.entries(data.overview || {}).map(([key, value]) => <div className="stat-card" key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{String(value)}</strong></div>)}</div><div className="admin-overview-grid">{[['Users', data.users], ['Trips', data.trips], ['Stays', data.stays], ['Routes', data.routes], ['Bookings', data.bookings], ['Reminders', data.reminders], ['Photos', data.photos]].map(([label, rows]) => <div className="surface" key={label}><span className="eyebrow">{label}</span><strong className="overview-count">{rows?.length ?? 0}</strong></div>)}</div></>;
   if (tab === 'users') return <><FormError>{error}</FormError><section className="surface admin-create"><p className="eyebrow">Add a user</p><form className="admin-form" onSubmit={(event) => { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); act('create', async () => { await api.post('/admin/users', { name: form.get('name'), email: form.get('email'), password: form.get('password'), role: form.get('role') }); formElement.reset(); }); }}><input name="name" placeholder="Name" maxLength="100" required/><input name="email" type="email" placeholder="Email" required/><input name="password" type="password" placeholder="Temporary password" minLength="12" required/><select name="role"><option value="traveler">Traveler</option><option value="admin">Admin</option></select><button className="button button-small" disabled={busyKey === 'create'}>Create user</button></form></section><DataTable columns={['Name', 'Email', 'Role', 'Change role']} rows={data.users || []} render={(user) => <><strong>{user.name}</strong><span>{user.email}</span><span className="status-tag">{user.role}</span><select defaultValue={user.role} onChange={(event) => act(`role-${user.id}`, () => api.patch(`/admin/users/${user.id}/role`, { role: event.target.value }))}><option value="traveler">Traveler</option><option value="admin">Admin</option></select></>} /></>;
   if (tab === 'trips') return <><FormError>{error}</FormError><DataTable columns={['Trip', 'Traveler', 'Dates', 'Status', 'Actions']} rows={data.trips || []} render={(trip) => <><div><strong>{trip.title}</strong><span>{trip.destination}</span></div><span>{trip.traveler_name || trip.user_name || `User ${trip.user_id}`}</span><span>{trip.start_date} – {trip.end_date}</span><select defaultValue={trip.status} onChange={(event) => act(`trip-${trip.id}`, () => api.patch(`/admin/trips/${trip.id}`, { status: event.target.value }))}><option value="draft">Draft</option><option value="planned">Planned</option><option value="booked">Booked</option><option value="completed">Completed</option></select><button className="text-button danger-text" disabled={busyKey === `delete-${trip.id}`} onClick={() => window.confirm('Delete this trip?') && act(`delete-${trip.id}`, () => api.delete(`/admin/trips/${trip.id}`))}>Delete</button></>} /></>;
+  if (tab === 'experiences') return <><FormError>{error}</FormError><p className="inline-note">Admins can review completed trips and stops, edit their shared notes, publish or hide them, or remove the public content. Removing an experience keeps the traveler’s trip and itinerary intact.</p><DataTable columns={['Type', 'Experience', 'Traveler', 'Rating', 'Visibility', 'Actions']} rows={data.experiences || []} rowComponent={AdminExperienceRow} rowProps={{ act, busyKey }} /></>;
   if (tab === 'stays') return <><FormError>{error}</FormError><AdminStayForm key={editingStay?.id || 'new-stay'} act={act} selected={editingStay} onCancel={() => setEditingStay(null)} /><DataTable columns={['Stay', 'Location', 'Rating', 'Nightly rate', 'Actions']} rows={data.stays || []} render={(stay) => <><div><strong>{stay.name}</strong><span>{stay.certification || 'No certification listed'}</span></div><span>{stay.location}</span><span>{stay.eco_rating}/5</span><span>{money(stay.price_per_night)}</span><span className="admin-row-actions"><button className="text-button" onClick={() => setEditingStay(stay)}>Edit</button><button className="text-button danger-text" onClick={() => window.confirm('Delete this stay?') && act(`stay-${stay.id}`, () => api.delete(`/admin/stays/${stay.id}`))}>Delete</button></span></>} /></>;
   if (tab === 'routes') return <><FormError>{error}</FormError><AdminRouteForm key={editingRoute?.id || 'new-route'} act={act} selected={editingRoute} onCancel={() => setEditingRoute(null)} /><DataTable columns={['Mode', 'Route', 'Distance', 'CO2 / person', 'Cost', 'Actions']} rows={data.routes || []} render={(route) => <><span className="route-mode">{route.mode}</span><strong>{route.origin} → {route.destination}</strong><span>{route.distance_km} km</span><span>{route.co2_kg_per_person} kg</span><span>{money(route.cost)}</span><span className="admin-row-actions"><button className="text-button" onClick={() => setEditingRoute(route)}>Edit</button><button className="text-button danger-text" onClick={() => window.confirm('Delete this route?') && act(`route-${route.id}`, () => api.delete(`/admin/routes/${route.id}`))}>Delete</button></span></>} /></>;
   if (tab === 'bookings') return <><FormError>{error}</FormError><DataTable columns={['Booking', 'Traveler', 'Amount', 'Status', 'Action']} rows={data.bookings || []} render={(booking) => <><div><strong>#{booking.id} / {booking.stay_name || 'Carbon offset'}</strong><span>{booking.trip_title} / {booking.paymongo_ref || 'No reference'}</span></div><span>{booking.traveler_name}</span><span>{money(booking.amount)}</span><span className="status-tag">{booking.payment_status}</span>{booking.payment_status === 'pending' ? <button className="button button-small button-outline" disabled={busyKey === `booking-${booking.id}`} onClick={() => act(`booking-${booking.id}`, () => api.post(`/admin/bookings/${booking.id}/reconcile`))}>Reconcile</button> : <span>Not pending</span>}</>} /></>;
@@ -1295,9 +1348,40 @@ function AdminContent({ tab, data, reload }) {
   return <div className="admin-photo-grid">{data.photos?.length ? data.photos.map((photo) => <article className="journal-card" key={photo.id}><img src={assetUrl(photo.photo_path)} alt={photo.caption || 'Journal photo'} loading="lazy"/><div><strong>{photo.traveler_name}</strong><p>{photo.caption}</p><small>{photo.trip_title}</small></div></article>) : <EmptyState>No journal photos.</EmptyState>}</div>;
 }
 
-function DataTable({ columns, rows, render }) {
+function DataTable({ columns, rows, render, rowComponent: RowComponent, rowProps = {} }) {
   if (!rows.length) return <EmptyState>No records in this section.</EmptyState>;
-  return <div className="table-scroll"><table className="admin-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row) => { const rendered = render(row); const children = rendered?.props?.children; const cells = Array.isArray(children) ? children : [children]; return <tr key={row.id}>{cells.map((cell, index) => <td key={`${row.id}-${index}`}>{cell}</td>)}</tr>; })}</tbody></table></div>;
+  return <div className="table-scroll"><table className="admin-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row) => {
+    const key = `${row.record_type || ''}-${row.id}`;
+    if (RowComponent) return <tr key={key}><RowComponent experience={row} {...rowProps} /></tr>;
+    const rendered = render(row);
+    const children = rendered?.props?.children;
+    const cells = Array.isArray(children) ? children : [children];
+    return <tr key={key}>{cells.map((cell, index) => <td key={`${row.id}-${index}`}>{cell}</td>)}</tr>;
+  })}</tbody></table></div>;
+}
+
+function AdminExperienceRow({ experience, act, busyKey }) {
+  const [notes, setNotes] = useState(experience.experience_notes || '');
+  const [rating, setRating] = useState(experience.experience_rating ? String(experience.experience_rating) : '');
+  const [shared, setShared] = useState(Boolean(Number(experience.share_experience)));
+  const type = experience.record_type === 'trip' ? 'trips' : 'stops';
+  const endpoint = `/admin/experiences/${type}/${experience.id}`;
+  const key = `experience-${type}-${experience.id}`;
+
+  useEffect(() => {
+    setNotes(experience.experience_notes || '');
+    setRating(experience.experience_rating ? String(experience.experience_rating) : '');
+    setShared(Boolean(Number(experience.share_experience)));
+  }, [experience.experience_notes, experience.experience_rating, experience.share_experience]);
+
+  return <>
+    <td><span className="status-tag">{experience.record_type === 'trip' ? 'Full trip' : `Stop · day ${experience.day_number}`}</span></td>
+    <td><div><strong>{experience.reference_title}</strong><span>{experience.destination}{experience.record_type === 'stop' ? ` · ${experience.trip_title}` : ''}</span></div><textarea className="admin-experience-notes" aria-label="Experience notes" maxLength="2000" rows="3" value={notes} onChange={(event) => setNotes(event.target.value)} /></td>
+    <td><div><strong>{experience.traveler_name}</strong><span>{experience.traveler_email}</span></div></td>
+    <td>{experience.record_type === 'trip' ? <select aria-label="Experience rating" value={rating} onChange={(event) => setRating(event.target.value)}><option value="">No rating</option><option value="1">1 star</option><option value="2">2 stars</option><option value="3">3 stars</option><option value="4">4 stars</option><option value="5">5 stars</option></select> : <span>—</span>}</td>
+    <td><label className="check-label"><input type="checkbox" checked={shared} onChange={(event) => setShared(event.target.checked)} /> Public</label></td>
+    <td><span className="admin-row-actions"><button className="button button-small button-outline" disabled={busyKey === key} onClick={() => act(key, () => api.patch(endpoint, { experience_notes: notes, experience_rating: rating ? Number(rating) : null, share_experience: shared }))}>Save</button><button className="text-button danger-text" disabled={busyKey === `${key}-remove`} onClick={() => window.confirm('Remove this experience from public view and clear its shared notes? The traveler’s trip or stop will remain.') && act(`${key}-remove`, () => api.delete(endpoint))}>Remove</button></span></td>
+  </>;
 }
 
 function AdminStayForm({ act, selected, onCancel }) {
