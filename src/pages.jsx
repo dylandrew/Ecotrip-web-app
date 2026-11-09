@@ -253,6 +253,11 @@ function Login() {
 function Register() {
   const { register } = useAuth(); const navigate = useNavigate();
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  async function google() {
+    setError('');
+    try { const data = await api.get('/auth/google/start', { auth: false, retry: false }); window.location.assign(data.authorization_url); }
+    catch (requestError) { setError(requestError.message); }
+  }
   async function submit(event) {
     event.preventDefault(); setError(''); setBusy(true);
     const form = new FormData(event.currentTarget);
@@ -262,7 +267,7 @@ function Register() {
     catch (requestError) { setError(requestError.message); }
     finally { setBusy(false); }
   }
-  return <AuthLayout eyebrow="A good place to begin" title="Create your EcoTrip account." copy="Keep your plans, bookings, and travel notes together."><div className="auth-form-wrap"><FormError>{error}</FormError><form className="form-stack" onSubmit={submit}><label>Name<input name="name" maxLength="100" autoComplete="name" required /></label><label>Email<input name="email" type="email" maxLength="150" autoComplete="email" required /></label><label>Home address<input name="address" maxLength="255" autoComplete="street-address" required /></label><label>Password<input name="password" type="password" minLength="12" maxLength="200" autoComplete="new-password" required /></label><label>Confirm password<input name="confirm_password" type="password" minLength="12" maxLength="200" autoComplete="new-password" required /></label><button className="button button-full" disabled={busy}>{busy ? 'Creating account…' : 'Create account'} <span aria-hidden="true">↗</span></button></form><p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p></div></AuthLayout>;
+  return <AuthLayout eyebrow="A good place to begin" title="Create your EcoTrip account." copy="Keep your plans, bookings, and travel notes together."><div className="auth-form-wrap"><FormError>{error}</FormError><button className="button button-outline button-full" type="button" onClick={google}>Continue with Google</button><div className="form-divider"><span>or create an account with email</span></div><form className="form-stack" onSubmit={submit}><label>Name<input name="name" maxLength="100" autoComplete="name" required /></label><label>Email<input name="email" type="email" maxLength="150" autoComplete="email" required /></label><label>Home address<input name="address" maxLength="255" autoComplete="street-address" required /></label><label>Password<input name="password" type="password" minLength="12" maxLength="200" autoComplete="new-password" required /></label><label>Confirm password<input name="confirm_password" type="password" minLength="12" maxLength="200" autoComplete="new-password" required /></label><button className="button button-full" disabled={busy}>{busy ? 'Creating account…' : 'Create account'} <span aria-hidden="true">↗</span></button></form><p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p></div></AuthLayout>;
 }
 
 function ForgotPassword() {
