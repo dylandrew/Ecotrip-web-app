@@ -302,9 +302,15 @@ function TripList() {
 
 function TripForm() {
   const { id } = useParams(); const editing = Boolean(id); const navigate = useNavigate();
+  const { user } = useAuth();
   const resource = useResource(editing ? `/trips/${id}` : '', editing);
   const [form, setForm] = useState({ title: '', destination: '', start_date: '', end_date: '', budget: '', travelers: 1, status: 'draft' });
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [itinerary, setItinerary] = useState([]); const [aiMessage, setAiMessage] = useState('');
+  const [startingCity, setStartingCity] = useState('');
+  const [useSavedAddress, setUseSavedAddress] = useState(false);
+  const homeDirectionsUrl = useSavedAddress && user?.address?.trim() && form.destination
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(user.address.trim())}&destination=${encodeURIComponent(form.destination)}&travelmode=transit`
+    : '';
   useEffect(() => { if (resource.data?.trip) setForm({ ...resource.data.trip, budget: String(resource.data.trip.budget), travelers: Number(resource.data.trip.travelers) }); }, [resource.data]);
   function change(event) {
     const { name, value } = event.target;
@@ -321,6 +327,7 @@ function TripForm() {
     try {
       const data = await api.post('/trips/generate-itinerary', {
         destination: form.destination,
+        starting_city: startingCity.trim(),
         start_date: form.start_date,
         end_date: form.end_date,
         budget: Number(form.budget),
@@ -382,6 +389,13 @@ function TripForm() {
         <h2>Ideas for the days between.</h2>
         <p>Generate a draft from your destination, dates, and budget. Adjust each day, time, stop, and estimate before saving. Confirm provider details directly.</p>
         {editing && resource.data?.items?.length > 0 && <p className="inline-note">This trip already has {resource.data.items.length} saved stops. Generate a replacement only if you want to replace them.</p>}
+        <label>Starting city or municipality (optional)<input name="starting_city" maxLength="100" value={startingCity} onChange={(event) => { setStartingCity(event.target.value); setItinerary([]); setAiMessage(''); }} placeholder="e.g. Quezon City" /></label>
+        <p className="inline-note">Enter a city or municipality only, not your street address. This is included in the itinerary request to plan the outbound travel leg.</p>
+        <label className="check-label"><input type="checkbox" checked={useSavedAddress} onChange={(event) => setUseSavedAddress(event.target.checked)} /> Use my saved home address for directions</label>
+        {useSavedAddress && (user?.address
+          ? <p className="inline-note">Your address is only sent to Google Maps if you open the directions link. It is not included in the AI itinerary request.</p>
+          : <p className="inline-note">Add a home address in <Link to="/account">Account settings</Link> to use this option.</p>)}
+        {homeDirectionsUrl && <a className="button button-small button-outline" href={homeDirectionsUrl} target="_blank" rel="noopener noreferrer">Open home-to-destination directions <span aria-hidden="true">↗</span></a>}
         <label>Travel preferences<textarea name="preferences" value={form.preferences || ''} onChange={change} maxLength="500" rows="3" placeholder="Nature walks, local food, a slower pace…" /></label>
         <button className="button button-outline" type="button" onClick={generate} disabled={busy || !form.destination || !form.start_date || !form.end_date || !form.budget}>{busy ? 'Working…' : 'Generate itinerary'}</button>
         {aiMessage && <p className="inline-note" aria-live="polite">{aiMessage}</p>}
@@ -568,6 +582,8 @@ function TripExperienceShare({ trip, prompted, onDismiss, onSaved }) {
 function TripDetail() {
   const { id } = useParams(); const navigate = useNavigate(); const location = useLocation(); const resource = useResource(`/trips/${id}`); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [promptExperience, setPromptExperience] = useState(false);
   const trip = resource.data?.trip; const items = resource.data?.items || [];
+  const estimatedItineraryCost = items.reduce((total, item) => total + Number(item.est_cost || 0), 0);
+  const budgetLeft = Number(trip?.budget || 0) - estimatedItineraryCost;
   useEffect(() => {
     if (trip && location.state?.promptExperience) {
       setPromptExperience(!Number(trip.share_experience));
@@ -576,7 +592,7 @@ function TripDetail() {
   }, [trip?.id, trip?.share_experience, location.key, location.pathname, location.state, navigate]);
   async function remove() { if (!window.confirm('Delete this trip and its itinerary? This cannot be undone.')) return; setBusy(true); try { await api.delete(`/trips/${id}`); navigate('/trips'); } catch (requestError) { setError(requestError.message); setBusy(false); } }
   const maxDay = trip ? Math.max(1, Math.floor((new Date(`${trip.end_date}T00:00:00`) - new Date(`${trip.start_date}T00:00:00`)) / 86400000) + 1) : 1;
-  return <Shell><LoadState {...resource} retry={resource.reload}>{trip && <><PageHeading eyebrow={trip.destination} title={trip.title} copy={`${dateLabel(trip.start_date)} – ${dateLabel(trip.end_date)}`} action={<Link className="button" to={`/trips/${id}/edit`}>Edit trip</Link>} /><FormError>{error}</FormError><div className="stat-grid"><div className="stat-card"><span>Budget</span><strong>{money(trip.budget)}</strong></div><div className="stat-card"><span>Travelers</span><strong>{trip.travelers}</strong></div><div className="stat-card"><span>Status</span><strong className="stat-word">{trip.status}</strong></div></div>{trip.status === 'completed' && <TripExperienceShare trip={trip} prompted={promptExperience} onDismiss={() => setPromptExperience(false)} onSaved={resource.reload} />}<section className="section-block"><div className="section-title"><div><p className="eyebrow">Your itinerary</p><h2>Days on the ground</h2></div><Link className="text-link" to={`/experiences?location=${encodeURIComponent(trip.destination)}`}>Traveler experiences near {trip.destination} ↗</Link></div>{items.length ? <div className="data-list">{items.map((item) => <ItineraryItemEditor item={item} tripId={id} maxDay={maxDay} onSaved={resource.reload} key={item.id} />)}</div> : <EmptyState action={<Link className="text-link" to={`/trips/${id}/edit`}>Add trip details ↗</Link>}>No saved itinerary items yet.</EmptyState>}</section><button className="button button-danger" onClick={remove} disabled={busy}>{busy ? 'Deleting…' : 'Delete trip'}</button></>}</LoadState></Shell>;
+  return <Shell><LoadState {...resource} retry={resource.reload}>{trip && <><PageHeading eyebrow={trip.destination} title={trip.title} copy={`${dateLabel(trip.start_date)} – ${dateLabel(trip.end_date)}`} action={<Link className="button" to={`/trips/${id}/edit`}>Edit trip</Link>} /><FormError>{error}</FormError><div className="stat-grid trip-budget-grid"><div className="stat-card"><span>Budget</span><strong>{money(trip.budget)}</strong></div><div className="stat-card"><span>Estimated budget left</span><strong>{money(budgetLeft)}</strong><small>After {money(estimatedItineraryCost)} in itinerary estimates</small></div><div className="stat-card"><span>Travelers</span><strong>{trip.travelers}</strong></div><div className="stat-card"><span>Status</span><strong className="stat-word">{trip.status}</strong></div></div>{trip.status === 'completed' && <TripExperienceShare trip={trip} prompted={promptExperience} onDismiss={() => setPromptExperience(false)} onSaved={resource.reload} />}<section className="section-block"><div className="section-title"><div><p className="eyebrow">Your itinerary</p><h2>Days on the ground</h2></div><Link className="text-link" to={`/experiences?location=${encodeURIComponent(trip.destination)}`}>Traveler experiences near {trip.destination} ↗</Link></div>{items.length ? <div className="data-list">{items.map((item) => <ItineraryItemEditor item={item} tripId={id} maxDay={maxDay} onSaved={resource.reload} key={item.id} />)}</div> : <EmptyState action={<Link className="text-link" to={`/trips/${id}/edit`}>Add trip details ↗</Link>}>No saved itinerary items yet.</EmptyState>}</section><button className="button button-danger" onClick={remove} disabled={busy}>{busy ? 'Deleting…' : 'Delete trip'}</button></>}</LoadState></Shell>;
 }
 
 function ExperienceCard({ experience }) {
@@ -728,7 +744,7 @@ function Stays() {
       <LoadState {...resource} retry={resource.reload}>
         <section className="section-block">
           <div className="section-title"><div><p className="eyebrow">EcoTrip directory</p><h2>Listed stays</h2></div></div>
-          {stays.length ? <div className="stay-grid">{stays.map((stay) => <Link className="stay-card" to={`/stays/${stay.id}`} key={stay.id}><span className="stay-rating">{Number(stay.eco_rating) > 0 ? `Eco-rated ${stay.eco_rating}/5` : 'Standard, not eco-rated'}</span><h3>{stay.name}</h3><p>{stay.location}</p><strong>{money(stay.price_per_night)} <small>/ night</small></strong></Link>)}</div> : <EmptyState>No {stayType === 'green' ? 'eco-rated' : stayType === 'standard' ? 'standard' : ''} stays match this destination in the EcoTrip directory.</EmptyState>}
+          {stays.length ? <div className="stay-grid">{stays.map((stay) => <Link className="stay-card" to={`/stays/${stay.id}`} key={stay.id}><span className="stay-rating">{Number(stay.eco_rating) > 0 ? `Eco-rated ${stay.eco_rating}/5` : 'Standard, not eco-rated'}</span><h3>{stay.name}</h3><p>{stay.location}</p><strong>{money(stay.price_per_night)} <small>/ night</small></strong><span className="button button-small button-outline stay-inquire">Inquire now <span aria-hidden="true">↗</span></span></Link>)}</div> : <EmptyState>No {stayType === 'green' ? 'eco-rated' : stayType === 'standard' ? 'standard' : ''} stays match this destination in the EcoTrip directory.</EmptyState>}
         </section>
         {destination && <section className="section-block">
           <div className="section-title"><div><p className="eyebrow">OpenStreetMap</p><h2>Nearby accommodations</h2></div></div>
@@ -745,7 +761,8 @@ function NearbyCard({ hotel, user }) {
   const [trips, setTrips] = useState([]); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => { if (user) api.get('/trips').then((data) => setTrips(data.trips || [])).catch((requestError) => setError(requestError.message)); }, [user]);
   async function payDirectly(event) { event.preventDefault(); setError(''); setBusy(true); const form = new FormData(event.currentTarget); try { const data = await api.post('/stays/nearby/checkout', { trip_id: Number(form.get('trip_id')), reservation_name: hotel.name, reservation_address: hotel.address || hotel.location || hotel.name }); if (typeof data.checkout_url !== 'string' || !data.checkout_url.startsWith('https://')) throw new Error('PayMongo did not return a valid checkout link. Please try again.'); window.location.assign(data.checkout_url); } catch (requestError) { setError(requestError.message); setBusy(false); } }
-  return <article className="nearby-card"><p className="eyebrow">Mapped · {hotel.kind || 'Accommodation'} · Eco status unverified</p><h3>{hotel.name}</h3><p>{hotel.address || hotel.location || 'Address not listed'}</p><p className="inline-note">Pay the configured reservation deposit through PayMongo. Confirm availability and the full rate directly with the property.</p>{user ? trips.length ? <form className="compact-form" onSubmit={payDirectly}><label>Trip<select name="trip_id" required defaultValue=""><option value="" disabled>Select a trip</option>{trips.map((trip) => <option value={trip.id} key={trip.id}>{trip.title} / {trip.start_date}</option>)}</select></label><button className="button button-small" disabled={busy}>{busy ? 'Opening PayMongo…' : 'Pay deposit with PayMongo'}</button></form> : <p className="inline-note">Plan an overnight trip before paying the reservation deposit.</p> : <Link className="text-link" to="/login">Sign in to pay with PayMongo ↗</Link>}<FormError>{error}</FormError></article>;
+  const inquiryUrl = hotel.website || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${hotel.name} ${hotel.address || hotel.location || ''}`.trim())}`;
+  return <article className="nearby-card"><p className="eyebrow">Mapped · {hotel.kind || 'Accommodation'} · Eco status unverified</p><h3>{hotel.name}</h3><p>{hotel.address || hotel.location || 'Address not listed'}</p><a className="button button-small button-outline" href={inquiryUrl} target="_blank" rel="noopener noreferrer">Inquire now <span aria-hidden="true">↗</span></a><p className="inline-note">Contact the property to confirm availability, rates, and details.</p>{user ? trips.length ? <form className="compact-form" onSubmit={payDirectly}><label>Trip<select name="trip_id" required defaultValue=""><option value="" disabled>Select a trip</option>{trips.map((trip) => <option value={trip.id} key={trip.id}>{trip.title} / {trip.start_date}</option>)}</select></label><button className="button button-small" disabled={busy}>{busy ? 'Opening PayMongo…' : 'Pay deposit with PayMongo'}</button></form> : <p className="inline-note">Plan an overnight trip before paying the reservation deposit.</p> : <Link className="text-link" to="/login">Sign in to pay with PayMongo ↗</Link>}<FormError>{error}</FormError></article>;
 }
 
 function StayDetail() {
