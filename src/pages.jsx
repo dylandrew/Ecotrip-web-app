@@ -580,7 +580,7 @@ function TripExperienceShare({ trip, prompted, onDismiss, onSaved }) {
 }
 
 function TripDetail() {
-  const { id } = useParams(); const navigate = useNavigate(); const location = useLocation(); const resource = useResource(`/trips/${id}`); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [promptExperience, setPromptExperience] = useState(false);
+  const { id } = useParams(); const navigate = useNavigate(); const location = useLocation(); const resource = useResource(`/trips/${id}`); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [exporting, setExporting] = useState(false); const [promptExperience, setPromptExperience] = useState(false);
   const trip = resource.data?.trip; const items = resource.data?.items || [];
   const estimatedItineraryCost = items.reduce((total, item) => total + Number(item.est_cost || 0), 0);
   const budgetLeft = Number(trip?.budget || 0) - estimatedItineraryCost;
@@ -591,8 +591,20 @@ function TripDetail() {
     }
   }, [trip?.id, trip?.share_experience, location.key, location.pathname, location.state, navigate]);
   async function remove() { if (!window.confirm('Delete this trip and its itinerary? This cannot be undone.')) return; setBusy(true); try { await api.delete(`/trips/${id}`); navigate('/trips'); } catch (requestError) { setError(requestError.message); setBusy(false); } }
+  async function downloadPlan() {
+    setError('');
+    setExporting(true);
+    try {
+      const { downloadTripPdf } = await import('./trip-export.js');
+      downloadTripPdf({ trip, items });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setExporting(false);
+    }
+  }
   const maxDay = trip ? Math.max(1, Math.floor((new Date(`${trip.end_date}T00:00:00`) - new Date(`${trip.start_date}T00:00:00`)) / 86400000) + 1) : 1;
-  return <Shell><LoadState {...resource} retry={resource.reload}>{trip && <><PageHeading eyebrow={trip.destination} title={trip.title} copy={`${dateLabel(trip.start_date)} – ${dateLabel(trip.end_date)}`} action={<Link className="button" to={`/trips/${id}/edit`}>Edit trip</Link>} /><FormError>{error}</FormError><div className="stat-grid trip-budget-grid"><div className="stat-card"><span>Budget</span><strong>{money(trip.budget)}</strong></div><div className="stat-card"><span>Estimated budget left</span><strong>{money(budgetLeft)}</strong><small>After {money(estimatedItineraryCost)} in itinerary estimates</small></div><div className="stat-card"><span>Travelers</span><strong>{trip.travelers}</strong></div><div className="stat-card"><span>Status</span><strong className="stat-word">{trip.status}</strong></div></div>{trip.status === 'completed' && <TripExperienceShare trip={trip} prompted={promptExperience} onDismiss={() => setPromptExperience(false)} onSaved={resource.reload} />}<section className="section-block"><div className="section-title"><div><p className="eyebrow">Your itinerary</p><h2>Days on the ground</h2></div><Link className="text-link" to={`/experiences?location=${encodeURIComponent(trip.destination)}`}>Traveler experiences near {trip.destination} ↗</Link></div>{items.length ? <div className="data-list">{items.map((item) => <ItineraryItemEditor item={item} tripId={id} maxDay={maxDay} onSaved={resource.reload} key={item.id} />)}</div> : <EmptyState action={<Link className="text-link" to={`/trips/${id}/edit`}>Add trip details ↗</Link>}>No saved itinerary items yet.</EmptyState>}</section><button className="button button-danger" onClick={remove} disabled={busy}>{busy ? 'Deleting…' : 'Delete trip'}</button></>}</LoadState></Shell>;
+  return <Shell><LoadState {...resource} retry={resource.reload}>{trip && <><PageHeading eyebrow={trip.destination} title={trip.title} copy={`${dateLabel(trip.start_date)} – ${dateLabel(trip.end_date)}`} action={<div className="trip-actions"><button className="button button-outline" type="button" onClick={downloadPlan} disabled={exporting}>{exporting ? 'Preparing PDF…' : 'Download plan PDF'}</button><Link className="button" to={`/trips/${id}/edit`}>Edit trip</Link></div>} /><FormError>{error}</FormError><div className="stat-grid trip-budget-grid"><div className="stat-card"><span>Budget</span><strong>{money(trip.budget)}</strong></div><div className="stat-card"><span>Estimated budget left</span><strong>{money(budgetLeft)}</strong><small>After {money(estimatedItineraryCost)} in itinerary estimates</small></div><div className="stat-card"><span>Travelers</span><strong>{trip.travelers}</strong></div><div className="stat-card"><span>Status</span><strong className="stat-word">{trip.status}</strong></div></div>{trip.status === 'completed' && <TripExperienceShare trip={trip} prompted={promptExperience} onDismiss={() => setPromptExperience(false)} onSaved={resource.reload} />}<section className="section-block"><div className="section-title"><div><p className="eyebrow">Your itinerary</p><h2>Days on the ground</h2></div><Link className="text-link" to={`/experiences?location=${encodeURIComponent(trip.destination)}`}>Traveler experiences near {trip.destination} ↗</Link></div>{items.length ? <div className="data-list">{items.map((item) => <ItineraryItemEditor item={item} tripId={id} maxDay={maxDay} onSaved={resource.reload} key={item.id} />)}</div> : <EmptyState action={<Link className="text-link" to={`/trips/${id}/edit`}>Add trip details ↗</Link>}>No saved itinerary items yet.</EmptyState>}</section><button className="button button-danger" onClick={remove} disabled={busy}>{busy ? 'Deleting…' : 'Delete trip'}</button></>}</LoadState></Shell>;
 }
 
 function ExperienceCard({ experience }) {

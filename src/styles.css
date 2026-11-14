@@ -218,6 +218,7 @@ p { line-height: 1.6; }
 .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 0 0 34px; }
 .page-heading h1 { max-width: 760px; margin: 0; font-size: 54px; line-height: 1.02; }
 .page-heading .eyebrow { margin-bottom: 12px; }
+.trip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .lead { max-width: 660px; margin: 16px 0 0; color: var(--muted); font-size: 17px; }
 .eyebrow { margin: 0 0 12px; color: var(--clay); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 .button { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 14px; padding: 10px 22px; border: 1px solid var(--clay); border-radius: 999px; background: var(--clay); color: #fff !important; cursor: pointer; font-size: 14px; font-weight: 700; text-decoration: none; transition: background .2s ease, border-color .2s ease, transform .2s ease; }
