@@ -5,7 +5,7 @@ const formatValue = (value) => value === null || value === undefined || value ==
 const formatMoney = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount)
-    ? new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount)
+    ? new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
     : formatValue(value);
 };
 
@@ -70,11 +70,35 @@ export function downloadTripPdf(data) {
     y += 14;
   }
 
-  function addSummaryRow(label, value) {
+  function drawPesoAmount(value, x, baseline, fontSize) {
+    const amount = Number(value);
+    const label = Number.isFinite(amount) ? formatMoney(amount) : formatValue(value);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(fontSize);
+    pdf.setTextColor(38, 43, 35);
+    // Standard PDF fonts can substitute the peso glyph, so draw it from a P and two bars.
+    pdf.text('P', x, baseline);
+    const symbolWidth = pdf.getTextWidth('P') * 0.78;
+    const symbolHeight = fontSize * 0.3528;
+    const firstBarY = baseline - symbolHeight * 0.4;
+    const secondBarY = baseline - symbolHeight * 0.68;
+    pdf.setDrawColor(38, 43, 35);
+    pdf.setLineWidth(0.2);
+    pdf.line(x - 0.15, firstBarY, x + symbolWidth, firstBarY);
+    pdf.line(x - 0.15, secondBarY, x + symbolWidth, secondBarY);
+    pdf.text(label, x + symbolWidth + 1, baseline);
+  }
+
+  function addSummaryRow(label, value, isMoney = false) {
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8);
     pdf.setTextColor(117, 91, 67);
     pdf.text(`${label}:`, margin + 3, y);
+    if (isMoney) {
+      drawPesoAmount(value, margin + 37, y, 9);
+      y += 7;
+      return;
+    }
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(9);
     pdf.setTextColor(38, 43, 35);
@@ -90,9 +114,12 @@ export function downloadTripPdf(data) {
       formatValue(item.item_type || 'Activity'),
       Number(item.completed) ? 'Completed' : 'Not completed',
     ].join(' / ');
-    const details = `Estimated cost: ${formatMoney(item.est_cost)}  |  Estimated CO2: ${formatValue(item.est_co2_kg ?? 0)} kg`;
-    const height = 11 + description.length * 4.5 + 9;
+    const costOffset = 12 + description.length * 4.5;
+    const co2Offset = costOffset + 4.5;
+    const height = co2Offset + 4;
     ensureSpace(height);
+    const costY = y + costOffset;
+    const co2Y = y + co2Offset;
 
     pdf.setDrawColor(224, 215, 198);
     pdf.setFillColor(255, 253, 248);
@@ -105,8 +132,9 @@ export function downloadTripPdf(data) {
     pdf.setTextColor(103, 103, 92);
     pdf.text(metadata, margin + 5, y + 7 + description.length * 4.5);
     pdf.setTextColor(38, 43, 35);
-    pdf.setFontSize(8);
-    pdf.text(details, margin + 5, y + height - 4);
+    pdf.text('Estimated cost:', margin + 5, costY);
+    drawPesoAmount(item.est_cost, margin + 5 + pdf.getTextWidth('Estimated cost: '), costY, 8);
+    pdf.text(`Estimated CO2: ${formatValue(item.est_co2_kg ?? 0)} kg`, margin + 5, co2Y);
     y += height + 4;
   }
 
@@ -131,9 +159,9 @@ export function downloadTripPdf(data) {
   addSummaryRow('Dates', `${formatDate(trip.start_date)} to ${formatDate(trip.end_date)}`);
   addSummaryRow('Travelers', trip.travelers);
   addSummaryRow('Status', trip.status);
-  addSummaryRow('Trip budget', formatMoney(trip.budget));
-  addSummaryRow('Estimated itinerary cost', formatMoney(estimatedCost));
-  addSummaryRow('Estimated budget left', formatMoney(budgetLeft));
+  addSummaryRow('Trip budget', trip.budget, true);
+  addSummaryRow('Estimated itinerary cost', estimatedCost, true);
+  addSummaryRow('Estimated budget left', budgetLeft, true);
   y += 5;
 
   addSection(`Itinerary (${items.length} stops)`);
