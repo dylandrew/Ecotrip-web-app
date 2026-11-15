@@ -339,6 +339,7 @@ function TripForm() {
       const data = await api.post('/trips/generate-itinerary', {
         destination: form.destination,
         starting_city: startingCity.trim(),
+        starting_from_home: Boolean(useSavedAddress && user?.address?.trim()),
         start_date: form.start_date,
         end_date: form.end_date,
         budget: Number(form.budget),
@@ -402,9 +403,9 @@ function TripForm() {
         {editing && resource.data?.items?.length > 0 && <p className="inline-note">This trip already has {resource.data.items.length} saved stops. Generate a replacement only if you want to replace them.</p>}
         <label>Starting city or municipality (optional)<input name="starting_city" maxLength="100" value={startingCity} onChange={(event) => { setStartingCity(event.target.value); setItinerary([]); setAiMessage(''); }} placeholder="e.g. Quezon City" /></label>
         <p className="inline-note">Enter a city or municipality only, not your street address. This is included in the itinerary request to plan the outbound travel leg.</p>
-        <label className="check-label"><input type="checkbox" checked={useSavedAddress} onChange={(event) => setUseSavedAddress(event.target.checked)} /> Use my saved home address for directions</label>
+        <label className="check-label"><input type="checkbox" checked={useSavedAddress} disabled={!user?.address?.trim()} onChange={(event) => { setUseSavedAddress(event.target.checked); setItinerary([]); setAiMessage(''); }} /> Start the itinerary from my saved home address</label>
         {useSavedAddress && (user?.address
-          ? <p className="inline-note">Your address is only sent to Google Maps if you open the directions link. It is not included in the AI itinerary request.</p>
+          ? <p className="inline-note">Your street address stays private and is not sent to the AI. Only the optional city or municipality above is included in the itinerary request. Your full address is sent to Google Maps only if you open the directions link.</p>
           : <p className="inline-note">Add a home address in <Link to="/account">Account settings</Link> to use this option.</p>)}
         {homeDirectionsUrl && <a className="button button-small button-outline" href={homeDirectionsUrl} target="_blank" rel="noopener noreferrer">Open home-to-destination directions <span aria-hidden="true">↗</span></a>}
         <label>Travel preferences<textarea name="preferences" value={form.preferences || ''} onChange={change} maxLength="500" rows="3" placeholder="Nature walks, local food, a slower pace…" /></label>
@@ -836,7 +837,7 @@ function Stays() {
         </section>
         {destination && <section className="section-block">
           <div className="section-title"><div><p className="eyebrow">OpenStreetMap</p><h2>Nearby accommodations</h2></div></div>
-          <p className="inline-note">Mapped places are not live vacancy listings or eco certifications. Contact each provider to confirm availability, rates, and details.</p>
+          <p className="inline-note">Mapped places are not live vacancy listings or eco certifications. Data © OpenStreetMap contributors. Contact each provider to confirm availability, rates, and details.</p>
           {fallbackSearch.destination === destination && fallbackSearch.error && <div className="inline-note">{fallbackSearch.error}</div>}
           {nearby.length ? <div className="nearby-grid">{nearby.map((hotel, index) => <NearbyCard key={`${hotel.name}-${index}`} hotel={hotel} user={user} />)}</div> : <EmptyState>{fallbackSearch.destination === destination && fallbackSearch.loading ? 'Searching nearby accommodations…' : fallbackSearch.destination === destination && fallbackSearch.error ? fallbackSearch.error : hotelSearchError ? 'Searching nearby accommodations…' : 'No nearby accommodations were mapped for this destination. Try a nearby city or a more specific destination.'}</EmptyState>}
         </section>}
