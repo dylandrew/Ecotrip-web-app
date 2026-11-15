@@ -754,8 +754,8 @@ function Stays() {
         if (!location) throw new Error('Location not found.');
         const query = new URLSearchParams({
           q: 'hotel',
-          lat: String(location.lat),
-          lon: String(location.lon),
+          lat: String(location[0]),
+          lon: String(location[1]),
           limit: '30',
           lang: 'en',
           osm_tag: 'tourism:hotel',
