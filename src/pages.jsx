@@ -77,6 +77,17 @@ function routeLocation(place) {
   return geocodeCache.get(key);
 }
 
+function osmWebsiteUrl(value) {
+  const website = String(value || '').trim();
+  if (!website) return '';
+  try {
+    const url = new URL(/^https?:\/\//i.test(website) ? website : `https://${website}`);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
 async function routeGeometry(origin, destination, mode) {
   const profile = mode === 'bike' ? 'bike' : mode === 'walk' ? 'foot' : 'driving';
   const coordinates = `${origin[1]},${origin[0]};${destination[1]},${destination[0]}`;
@@ -720,8 +731,73 @@ function Stays() {
   const resource = useResource(endpoint);
   const { user } = useAuth();
   const stays = resource.data?.stays || [];
-  const nearby = resource.data?.nearby_hotels || [];
+  const [fallbackSearch, setFallbackSearch] = useState({ destination: '', places: [], loading: false, error: '' });
+  const hotelSearchError = resource.data?.hotel_search_error || '';
+  const nearby = resource.data?.nearby_hotels?.length
+    ? resource.data.nearby_hotels
+    : fallbackSearch.destination === destination ? fallbackSearch.places : [];
   useEffect(() => { setSearch(destination); }, [destination]);
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    if (!destination || resource.loading || !hotelSearchError) {
+      setFallbackSearch({ destination, places: [], loading: false, error: '' });
+      return () => { active = false; controller.abort(); };
+    }
+
+    setFallbackSearch({ destination, places: [], loading: true, error: '' });
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    (async () => {
+      try {
+        const location = await routeLocation(destination);
+        if (!location) throw new Error('Location not found.');
+        const query = new URLSearchParams({
+          q: 'hotel',
+          lat: String(location.lat),
+          lon: String(location.lon),
+          limit: '30',
+          lang: 'en',
+          osm_tag: 'tourism:hotel',
+        });
+        const response = await fetch(`https://photon.komoot.io/api/?${query}`, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Hotel search returned HTTP ${response.status}.`);
+        const data = await response.json();
+        if (!Array.isArray(data.features)) throw new Error('Hotel search returned an invalid response.');
+
+        const places = data.features.flatMap((feature) => {
+          const properties = feature?.properties || {};
+          const name = String(properties.name || '').trim();
+          if (!name || properties.osm_key !== 'tourism' || properties.osm_value !== 'hotel') return [];
+          const addressParts = [properties.street, properties.city || properties.town || properties.village]
+            .filter((part) => typeof part === 'string' && part.trim())
+            .map((part) => part.trim());
+          return [{
+            name,
+            address: addressParts.length ? addressParts.join(', ') : destination,
+            kind: 'Hotel',
+            website: osmWebsiteUrl(properties.website),
+          }];
+        });
+        if (active) setFallbackSearch({ destination, places, loading: false, error: '' });
+      } catch {
+        if (active) {
+          setFallbackSearch({
+            destination,
+            places: [],
+            loading: false,
+            error: 'Nearby hotel search is temporarily unavailable. Please try again shortly.',
+          });
+        }
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    })();
+
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+  }, [destination, resource.loading, hotelSearchError]);
 
   function searchSubmit(event) {
     event.preventDefault();
@@ -761,8 +837,8 @@ function Stays() {
         {destination && <section className="section-block">
           <div className="section-title"><div><p className="eyebrow">OpenStreetMap</p><h2>Nearby accommodations</h2></div></div>
           <p className="inline-note">Mapped places are not live vacancy listings or eco certifications. Contact each provider to confirm availability, rates, and details.</p>
-          {resource.data?.hotel_search_error && <div className="inline-note">{resource.data.hotel_search_error}</div>}
-          {nearby.length ? <div className="nearby-grid">{nearby.map((hotel, index) => <NearbyCard key={`${hotel.name}-${index}`} hotel={hotel} user={user} />)}</div> : <EmptyState>{resource.data?.hotel_search_error ? 'Nearby accommodation search is temporarily unavailable.' : 'No nearby accommodations were mapped for this destination. Try a nearby city or a more specific destination.'}</EmptyState>}
+          {fallbackSearch.destination === destination && fallbackSearch.error && <div className="inline-note">{fallbackSearch.error}</div>}
+          {nearby.length ? <div className="nearby-grid">{nearby.map((hotel, index) => <NearbyCard key={`${hotel.name}-${index}`} hotel={hotel} user={user} />)}</div> : <EmptyState>{fallbackSearch.destination === destination && fallbackSearch.loading ? 'Searching nearby accommodations…' : fallbackSearch.destination === destination && fallbackSearch.error ? fallbackSearch.error : hotelSearchError ? 'Searching nearby accommodations…' : 'No nearby accommodations were mapped for this destination. Try a nearby city or a more specific destination.'}</EmptyState>}
         </section>}
       </LoadState>
     </Shell>
